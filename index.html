@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Bus Route Editor</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css"/>
+
+<style>
+
+body{
+font-family:Arial;
+background:#f4f4f4;
+padding:20px;
+}
+
+.card{
+background:white;
+padding:20px;
+margin-bottom:20px;
+border-radius:10px;
+box-shadow:0 4px 8px rgba(0,0,0,0.1);
+}
+
+button{
+padding:10px 15px;
+margin:5px;
+border:none;
+border-radius:8px;
+background:#007bff;
+color:white;
+cursor:pointer;
+}
+
+button:hover{
+background:#0056b3;
+}
+
+#map{
+height:450px;
+border-radius:10px;
+}
+
+textarea{
+width:100%;
+height:120px;
+font-family:monospace;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="card">
+
+<h2>Bus Announcement</h2>
+
+<h1 id="displayText">Click Next</h1>
+
+<select id="langSelect">
+
+<option value="de-DE">Deutsch 🇩🇪</option>
+<option value="en-US">English 🇺🇸</option>
+<option value="cs-CZ">Čeština 🇨🇿</option>
+<option value="fr-FR">Français 🇫🇷</option>
+<option value="it-IT">Italiano 🇮🇹</option>
+<option value="uk-UA">Українська 🇺🇦</option>
+
+</select>
+
+<br><br>
+
+<button onclick="nextStop()">Next</button> <button onclick="resetStops()">Reset</button>
+
+</div>
+
+<div class="card">
+
+<h2>Stops Editor</h2>
+
+<textarea id="stopsEditor"></textarea>
+
+<br>
+
+<button onclick="applyStops()">Apply Stops</button> <button onclick="addMarkerMode()">Add Stop</button> <button onclick="exportRoute()">Export Route</button>
+
+</div>
+
+<div class="card">
+
+<h2>Map</h2>
+
+<div id="map"></div>
+
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
+
+<script>
+
+let texts=[]
+let stopCoords=[]
+let index=0
+let adding=false
+
+const langSelect=document.getElementById("langSelect")
+
+const translations={
+"de-DE":"Nächster Halt",
+"en-US":"Next stop",
+"cs-CZ":"Příští zastávka",
+"fr-FR":"Prochain arrêt",
+"it-IT":"Prossima fermata",
+"uk-UA":"Наступна зупинка"
+}
+
+const sound1 = new Audio("Sound1.mp3")
+const sound2 = new Audio("Sound2.mp3")
+const sound3 = new Audio("Sound3.mp3")
+const sound4 = new Audio("Sound4.mp3")
+
+function speak(text){
+const u=new SpeechSynthesisUtterance(text)
+u.lang=langSelect.value
+speechSynthesis.speak(u)
+}
+
+function wait(ms){
+return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function playAudio(audio){
+return new Promise(resolve=>{
+audio.currentTime = 0
+audio.play()
+audio.onended = resolve
+})
+}
+
+async function nextStop(){
+
+if(index>=texts.length)return
+
+document.getElementById("displayText").innerText=texts[index]
+
+let phrase=translations[langSelect.value]||"Next stop"
+
+await playAudio(sound1)
+
+speak(phrase)
+speak(texts[index])
+
+await playAudio(sound2)
+
+await wait(15000)
+
+await playAudio(sound3)
+
+await wait(5000)
+
+await playAudio(sound4)
+
+index++
+
+}
+
+function resetStops(){
+index=0
+document.getElementById("displayText").innerText="Click Next"
+}
+
+const map=L.map("map").setView([47.3769,8.5417],8)
+
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
+maxZoom:19
+}).addTo(map)
+
+let markerLayer=L.layerGroup().addTo(map)
+
+let routingControl=null
+
+function applyStops(){
+
+const text=document.getElementById("stopsEditor").value.trim()
+const lines=text.split("\n")
+
+texts=[]
+stopCoords=[]
+
+markerLayer.clearLayers()
+
+let waypoints=[]
+
+lines.forEach(line=>{
+
+let p=line.split(",")
+
+if(p.length===3){
+
+let name=p[0].trim()
+let lat=parseFloat(p[1])
+let lon=parseFloat(p[2])
+
+texts.push(name)
+stopCoords.push([lat,lon])
+
+L.marker([lat,lon]).addTo(markerLayer).bindPopup(name)
+
+waypoints.push(L.latLng(lat,lon))
+
+}
+
+})
+
+if(routingControl){
+map.removeControl(routingControl)
+}
+
+routingControl=L.Routing.control({
+waypoints:waypoints,
+lineOptions:{styles:[{color:"blue",weight:5}]},
+createMarker:()=>null,
+addWaypoints:false
+}).addTo(map)
+
+resetStops()
+
+}
+
+function addMarkerMode(){
+alert("Click map to add stop")
+adding=true
+}
+
+map.on("click",function(e){
+
+if(!adding)return
+
+let name=prompt("Stop name")
+
+if(name){
+
+let lat=e.latlng.lat.toFixed(6)
+let lon=e.latlng.lng.toFixed(6)
+
+let editor=document.getElementById("stopsEditor")
+
+editor.value+=(editor.value.trim()?"\n":"")+name+","+lat+","+lon
+
+applyStops()
+
+}
+
+adding=false
+
+})
+
+function exportRoute(){
+
+const data=document.getElementById("stopsEditor").value
+
+const blob=new Blob([data],{type:"text/plain"})
+
+const a=document.createElement("a")
+
+a.href=URL.createObjectURL(blob)
+
+a.download="bus_route.txt"
+
+a.click()
+
+}
+
+function distance(lat1,lon1,lat2,lon2){
+
+const R=6371000
+
+const dLat=(lat2-lat1)*Math.PI/180
+const dLon=(lon2-lon1)*Math.PI/180
+
+const a=
+Math.sin(dLat/2)*Math.sin(dLat/2)+
+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
+Math.sin(dLon/2)*Math.sin(dLon/2)
+
+const c=2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))
+
+return R*c
+
+}
+
+navigator.geolocation.watchPosition(function(pos){
+
+if(index>=stopCoords.length)return
+
+const lat=pos.coords.latitude
+const lon=pos.coords.longitude
+
+const stop=stopCoords[index]
+
+const dist=distance(lat,lon,stop[0],stop[1])
+
+if(dist<=50){
+nextStop()
+}
+
+})
+
+document.getElementById("stopsEditor").value=
+
+`Zurich,47.3769,8.5417
+Zug,47.1662,8.5155
+Lugano,46.0037,8.9511
+Como,45.8081,9.0852
+Milan,45.4642,9.1900`
+
+applyStops()
+
+</script>
+
+</body>
+</html>
