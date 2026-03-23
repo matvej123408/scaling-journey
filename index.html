@@ -10,7 +10,6 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css"/>
 
 <style>
-
 body{
 font-family:Arial;
 background:#f4f4f4;
@@ -71,65 +70,37 @@ max-height:200px;
 overflow:auto;
 font-family:monospace;
 }
-
 </style>
 </head>
 
 <body>
 
 <div class="card">
-
 <h2>Bus Announcement</h2>
-
 <h1 id="displayText">Click Next</h1>
-
-<select id="langSelect">
-
-<option value="de-DE">Deutsch 🇩🇪</option>
-<option value="en-US">English 🇺🇸</option>
-<option value="cs-CZ">Čeština 🇨🇿</option>
-<option value="fr-FR">Français 🇫🇷</option>
-<option value="it-IT">Italiano 🇮🇹</option>
-<option value="uk-UA">Українська 🇺🇦</option>
-
-</select>
-
-<br><br>
 
 <button onclick="nextStop()">Next</button>
 <button onclick="resetStops()">Reset</button>
 <button onclick="requestStop()">STOP</button>
-
 </div>
 
 <div class="card">
-
 <h2>Stops Editor</h2>
-
 <textarea id="stopsEditor"></textarea>
-
 <br>
-
 <button onclick="applyStops()">Apply Stops</button>
 <button onclick="addMarkerMode()">Add Stop</button>
 <button onclick="exportRoute()">Export Route</button>
-
 </div>
 
 <div class="card">
-
 <h2>Map</h2>
-
 <div id="map"></div>
-
 </div>
 
 <div class="card">
-
 <h2>Stops History</h2>
-
 <div id="history"></div>
-
 </div>
 
 <div id="stopRequest">STOP REQUESTED</div>
@@ -144,54 +115,32 @@ let stopCoords=[]
 let index=0
 let adding=false
 let stopRequested=false
-let announcedIndex=-1
 
-const langSelect=document.getElementById("langSelect")
+let doorSequenceStarted=false
+let stopAnnounced150=false
 
 const stopSound=new Audio("stop.mp3")
-
-const translations={
-"de-DE":"Nächster Halt",
-"en-US":"Next stop",
-"cs-CZ":"Příští zastávka",
-"fr-FR":"Prochain arrêt",
-"it-IT":"Prossima fermata",
-"uk-UA":"Наступна зупинка"
-}
+const doorOpen=new Audio("door_open.mp3")
+const doorCloseAnn=new Audio("door_close_ann.mp3")
+const doorBeep=new Audio("door.mp3")
 
 function speak(text){
-
 const u=new SpeechSynthesisUtterance(text)
-u.lang=langSelect.value
+u.lang="zh-HK"
 speechSynthesis.speak(u)
-
 }
 
 function requestStop(){
-
 stopRequested=true
 document.getElementById("stopRequest").style.display="block"
 stopSound.play()
-
 }
 
 function nextStop(){
 
 if(index>=texts.length)return
 
-if(stopRequested){
-
-document.getElementById("stopRequest").style.display="none"
-stopRequested=false
-
-}
-
 document.getElementById("displayText").innerText=texts[index]
-
-let phrase=translations[langSelect.value]||"Next stop"
-
-speak(phrase)
-speak(texts[index])
 
 let now=new Date()
 
@@ -203,15 +152,11 @@ now.getSeconds().toString().padStart(2,"0")
 document.getElementById("history").innerHTML+=time+" - "+texts[index]+"<br>"
 
 index++
-announcedIndex=-1
-
 }
 
 function resetStops(){
-
 index=0
 document.getElementById("displayText").innerText="Click Next"
-
 }
 
 const map=L.map("map").setView([47.3769,8.5417],8)
@@ -233,12 +178,10 @@ let busMarker=L.marker([47.3769,8.5417],{icon:busIcon}).addTo(map)
 function applyStops(){
 
 const text=document.getElementById("stopsEditor").value.trim()
-
 const lines=text.split("\n")
 
 texts=[]
 stopCoords=[]
-
 markerLayer.clearLayers()
 
 let waypoints=[]
@@ -265,29 +208,22 @@ waypoints.push(L.latLng(lat,lon))
 })
 
 if(routingControl){
-
 map.removeControl(routingControl)
-
 }
 
 routingControl=L.Routing.control({
-
 waypoints:waypoints,
 lineOptions:{styles:[{color:"blue",weight:5}]},
 createMarker:()=>null,
 addWaypoints:false
-
 }).addTo(map)
 
 resetStops()
-
 }
 
 function addMarkerMode(){
-
 alert("Click map to add stop")
 adding=true
-
 }
 
 map.on("click",function(e){
@@ -316,15 +252,11 @@ adding=false
 function exportRoute(){
 
 const data=document.getElementById("stopsEditor").value
-
 const blob=new Blob([data],{type:"text/plain"})
-
 const a=document.createElement("a")
 
 a.href=URL.createObjectURL(blob)
-
 a.download="bus_route.txt"
-
 a.click()
 
 }
@@ -347,7 +279,7 @@ return R*c
 
 }
 
-navigator.geolocation.watchPosition(function(pos){
+navigator.geolocation.watchPosition(async function(pos){
 
 const lat=pos.coords.latitude
 const lon=pos.coords.longitude
@@ -357,30 +289,49 @@ busMarker.setLatLng([lat,lon])
 if(index>=stopCoords.length)return
 
 const stop=stopCoords[index]
-
 const dist=distance(lat,lon,stop[0],stop[1])
 
-if(dist<=100 && announcedIndex!==index){
+// за 150 м
+if(dist<=150 && !stopAnnounced150){
 
-let phrase=translations[langSelect.value]||"Next stop"
-
-speak(phrase)
+speak("下一站")
 speak(texts[index])
 
-announcedIndex=index
+stopAnnounced150=true
 
 }
 
-if(dist<=150){
+// за 5 м
+if(dist<=5 && !doorSequenceStarted){
+
+doorSequenceStarted=true
+
+await new Promise(r=>setTimeout(r,7000))
+
+doorOpen.play()
+
+await new Promise(r=>setTimeout(r,10000))
+
+doorCloseAnn.play()
+
+doorCloseAnn.onended=async ()=>{
+
+await new Promise(r=>setTimeout(r,1000))
+
+doorBeep.play()
 
 nextStop()
+
+doorSequenceStarted=false
+stopAnnounced150=false
+
+}
 
 }
 
 })
 
 document.getElementById("stopsEditor").value=
-
 `Zurich,47.3769,8.5417
 Zug,47.1662,8.5155
 Lugano,46.0037,8.9511
@@ -393,4 +344,3 @@ applyStops()
 
 </body>
 </html>
-
